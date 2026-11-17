@@ -1,0 +1,30 @@
+{
+  "business_name": "Студия красоты «Лаванда»",
+  "address": "ул. Примерная, 10",
+  "phone": "+7 900 000-00-00",
+  "timezone": "Asia/Yakutsk",
+  "webapp_url": "https://almadorr.github.io/lavanda-booking-miniapp/",
+
+  "work_hours": {
+    "mon": ["10:00", "20:00"],
+    "tue": ["10:00", "20:00"],
+    "wed": ["10:00", "20:00"],
+    "thu": ["10:00", "20:00"],
+    "fri": ["10:00", "20:00"],
+    "sat": ["11:00", "18:00"],
+    "sun": null
+  },
+
+  "slot_step_minutes": 30,
+  "days_ahead": 14,
+  "min_hours_before_booking": 1,
+  "remind_hours_before": 3,
+
+  "services": [
+    {"id": "haircut_w", "icon": "✂️", "name": "Женская стрижка", "minutes": 60, "price": 1500},
+    {"id": "haircut_m", "icon": "💈", "name": "Мужская стрижка", "minutes": 30, "price": 800},
+    {"id": "color", "icon": "🎨", "name": "Окрашивание", "minutes": 120, "price": 3500},
+    {"id": "manicure", "icon": "💅", "name": "Маникюр с покрытием", "minutes": 90, "price": 2000},
+    {"id": "brows", "icon": "✨", "name": "Коррекция бровей", "minutes": 30, "price": 600}
+  ]
+}
