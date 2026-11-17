@@ -20,6 +20,14 @@
   "min_hours_before_booking": 1,
   "remind_hours_before": 3,
 
+  "masters": [
+    {"id": "anna", "name": "Анна", "services": ["haircut_w", "haircut_m", "color"]},
+    {"id": "olga", "name": "Ольга", "services": ["manicure", "brows"]},
+    {"id": "marina", "name": "Марина", "services": ["haircut_w", "haircut_m", "brows"],
+     "work_hours": {"mon": null, "tue": ["12:00", "20:00"], "wed": ["12:00", "20:00"],
+                    "thu": ["12:00", "20:00"], "fri": ["12:00", "20:00"], "sat": ["11:00", "18:00"], "sun": null}}
+  ],
+
   "services": [
     {"id": "haircut_w", "icon": "✂️", "name": "Женская стрижка", "minutes": 60, "price": 1500},
     {"id": "haircut_m", "icon": "💈", "name": "Мужская стрижка", "minutes": 30, "price": 800},
