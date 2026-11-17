@@ -65,6 +65,11 @@
   .day.sel small { color: rgba(255,255,255,.8); }
   .days::after { content: ""; flex: none; width: 8px; }
 
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { padding: 9px 14px; border-radius: 999px; border: 0; background: var(--card); color: inherit;
+    font: inherit; font-weight: 500; cursor: pointer; }
+  .chip.sel { background: var(--accent); color: #fff; }
+  .row[hidden] { display: none; }
   .period { margin: 14px 4px 8px; font-size: 14px; color: var(--hint); }
   .times { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
   .time { padding: 11px 0; border-radius: 12px; border: 0; background: var(--card); color: inherit;
@@ -114,6 +119,10 @@
       <div><b id="c2name"></b><br><small id="c2meta"></small></div>
       <button class="link" onclick="go(1)">Изменить</button>
     </div>
+    <div id="mastersWrap" hidden>
+      <h2>Мастер</h2>
+      <div class="chips" id="masters"></div>
+    </div>
     <h2>День</h2>
     <div class="days" id="days"></div>
     <div id="times"></div>
@@ -124,6 +133,7 @@
     <div class="card sum">
       <b id="sumName"></b>
       <div class="row">🗓 <span id="sumWhen"></span></div>
+      <div class="row" id="sumMasterRow" hidden>💇 <span id="sumMaster"></span></div>
       <div class="row">⏱ <span id="sumMeta"></span></div>
     </div>
     <h2>Ваши данные</h2>
@@ -173,19 +183,33 @@ function salonNow() {
   return mk(+p.year, +p.month, +p.day, +p.hour, +p.minute);
 }
 
-// Занятое время приходит от бота в адресе: ?b=2611181200-60.2611191500-90 (ГГММДДЧЧММ-минуты)
+// Занятое время приходит от бота в адресе: ?b=2611181200-60-anna.2611191500-90-* (ГГММДДЧЧММ-минуты-мастер)
+// «*» или пусто — запись без мастера, она занимает время у всех.
 function parseBusy() {
   const raw = new URLSearchParams(location.search).get("b") || "";
   return raw.split(".").filter(Boolean).map(x => {
-    const [s, len] = x.split("-");
+    const [s, len, m] = x.split("-");
     const start = mk(2000 + +s.slice(0,2), +s.slice(2,4), +s.slice(4,6), +s.slice(6,8), +s.slice(8,10));
-    return [start, new Date(start.getTime() + (+len) * 60000)];
+    return [start, new Date(start.getTime() + (+len) * 60000), (!m || m === "*") ? null : m];
   });
 }
 
+const mastersFor = svc => (S.masters || []).filter(m => (m.services || []).includes(svc.id));
+const masterById = id => (S.masters || []).find(m => m.id === id);
+
+// Свободное время: у конкретного мастера, у любого подходящего, или общее (если мастеров нет)
+function freeSlots(day, minutes, masterId) {
+  const svcMasters = mastersFor(state.svc);
+  if (!svcMasters.length) return freeSlotsFor(day, minutes, null, S.work_hours);
+  if (masterId) { const m = masterById(masterId); return m ? freeSlotsFor(day, minutes, m.id, m.work_hours || S.work_hours) : []; }
+  const all = new Map();
+  svcMasters.forEach(m => freeSlotsFor(day, minutes, m.id, m.work_hours || S.work_hours).forEach(t => all.set(t.getTime(), t)));
+  return [...all.values()].sort((a, b) => a - b);
+}
+
 // Та же логика, что в logic.py у бота
-function freeSlots(day, minutes) {
-  const hours = S.work_hours[WD[wd(day)]];
+function freeSlotsFor(day, minutes, masterId, workHours) {
+  const hours = workHours[WD[wd(day)]];
   if (!hours) return [];
   const [oh, om] = hours[0].split(":").map(Number), [ch, cm] = hours[1].split(":").map(Number);
   const y = day.getUTCFullYear(), m = day.getUTCMonth() + 1, d = day.getUTCDate();
@@ -195,7 +219,8 @@ function freeSlots(day, minutes) {
   const res = [];
   for (let t = open.getTime(); t + len <= close.getTime(); t += step) {
     const end = t + len;
-    if (t >= earliest && !busy.some(([bs, be]) => t < be.getTime() && end > bs.getTime())) res.push(new Date(t));
+    const clash = busy.some(([bs, be, bm]) => (!masterId || !bm || bm === masterId) && t < be.getTime() && end > bs.getTime());
+    if (t >= earliest && !clash) res.push(new Date(t));
   }
   return res;
 }
@@ -208,7 +233,11 @@ function renderServices() {
     b.innerHTML = `<span class="ico">${s.icon || ICONS[i % ICONS.length]}</span>
       <span class="t"><b></b><small>${s.minutes} мин</small></span><span class="price">${rub(s.price)}</span>`;
     b.querySelector("b").textContent = s.name;
-    b.onclick = () => { haptic(); state.svc = s; state.day = null; state.time = null; go(2); };
+    b.onclick = () => {
+      haptic(); state.svc = s; state.day = null; state.time = null;
+      const ms = mastersFor(s); state.master = ms.length === 1 ? ms[0].id : "";
+      go(2);
+    };
     $("services").append(b);
   });
 }
@@ -217,12 +246,13 @@ function renderDays() {
   const s = state.svc;
   $("c2name").textContent = s.name;
   $("c2meta").textContent = `${s.minutes} мин · ${rub(s.price)}`;
+  renderMasters();
   const box = $("days"); box.innerHTML = "";
   const today = salonNow();
   let first = null;
   for (let i = 0; i < S.days_ahead; i++) {
     const day = mk(today.getUTCFullYear(), today.getUTCMonth() + 1, today.getUTCDate() + i);
-    const free = freeSlots(day, s.minutes).length;
+    const free = freeSlots(day, s.minutes, state.master).length;
     const b = document.createElement("button");
     b.className = "day";
     b.innerHTML = `<small>${i === 0 ? "Сег" : i === 1 ? "Завт" : WD_RU[wd(day)]}</small><b>${day.getUTCDate()}</b>`;
@@ -239,7 +269,7 @@ function renderDays() {
 function renderTimes() {
   const box = $("times"); box.innerHTML = "";
   if (!state.day) { box.innerHTML = `<div class="card empty">Свободных окошек в ближайшие дни нет.<br>Напишите нам в Телеграме.</div>`; updateButton(); return; }
-  const slots = freeSlots(state.day, state.svc.minutes);
+  const slots = freeSlots(state.day, state.svc.minutes, state.master);
   const groups = [["Утро", 0, 12], ["День", 12, 17], ["Вечер", 17, 24]];
   groups.forEach(([title, from, to]) => {
     const list = slots.filter(t => t.getUTCHours() >= from && t.getUTCHours() < to);
@@ -258,11 +288,28 @@ function renderTimes() {
   updateButton();
 }
 
+function renderMasters() {
+  const ms = mastersFor(state.svc), box = $("masters");
+  $("mastersWrap").hidden = ms.length < 2;
+  box.innerHTML = "";
+  if (ms.length < 2) return;
+  [{ id: "", name: "✨ Любой" }, ...ms].forEach(m => {
+    const b = document.createElement("button");
+    b.className = "chip" + (state.master === m.id ? " sel" : "");
+    b.textContent = m.name;
+    b.onclick = () => { haptic(); state.master = m.id; state.day = null; state.time = null; renderDays(); };
+    box.append(b);
+  });
+}
+
 function renderSummary() {
   const s = state.svc;
   $("sumName").textContent = s.name;
   $("sumWhen").textContent = human(state.time);
   $("sumMeta").textContent = `${s.minutes} мин · ${rub(s.price)}`;
+  const hasMasters = mastersFor(s).length > 0;
+  $("sumMasterRow").hidden = !hasMasters;
+  if (hasMasters) $("sumMaster").textContent = state.master ? masterById(state.master).name : "любой свободный мастер";
 }
 
 function go(step) {
@@ -303,7 +350,7 @@ function mainAction() {
   if (!name) return shake($("name"));
   if (!phoneOk(phone)) return shake($("phone"));
   remember(name, phone);
-  const payload = JSON.stringify({ s: state.svc.id, t: iso(state.time), n: name, p: phone });
+  const payload = JSON.stringify({ s: state.svc.id, t: iso(state.time), n: name, p: phone, m: state.master || "" });
   if (inTg) { tg.HapticFeedback.notificationOccurred("success"); tg.sendData(payload); }
   else alert("Демо в браузере. В Телеграме бот получил бы:\n" + payload);
 }
