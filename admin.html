@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Настройки салона</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --accent: #9B5C7A;
+    --accent-soft: rgba(155, 92, 122, .12);
+    --page: var(--tg-theme-secondary-bg-color, #F4EEEA);
+    --card: var(--tg-theme-section-bg-color, var(--tg-theme-bg-color, #FFFFFF));
+    --text: var(--tg-theme-text-color, #2B2226);
+    --hint: var(--tg-theme-hint-color, #8C7F85);
+    --line: rgba(127, 110, 118, .18);
+    --danger: var(--tg-theme-destructive-text-color, #C4455A);
+    --field: rgba(127, 110, 118, .08);
+  }
+  html[data-dark] { --accent: #D295B2; --accent-soft: rgba(210, 149, 178, .16); }
+  @media (prefers-color-scheme: dark) {
+    html:not([data-tg]) { --page: #17131A; --card: #231D25; --text: #F1E9ED; --hint: #9D8F96;
+      --accent: #D295B2; --accent-soft: rgba(210, 149, 178, .16); }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; background: var(--page); color: var(--text);
+    font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 560px; margin: 0 auto; padding: 14px 16px 110px; }
+  h1 { font-size: 22px; margin: 4px 4px 12px; }
+  .tabs { display: flex; gap: 6px; overflow-x: auto; margin: 0 -16px 14px; padding: 0 16px; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { flex: none; padding: 8px 14px; border-radius: 999px; border: 0; background: var(--card);
+    color: inherit; font: inherit; font-weight: 500; cursor: pointer; }
+  .tab.on { background: var(--accent); color: #fff; }
+  .card { background: var(--card); border-radius: 16px; padding: 12px 14px; margin-bottom: 10px; }
+  .card.off { opacity: .55; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .row + .row { margin-top: 8px; }
+  label.f { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--hint); flex: 1; min-width: 90px; }
+  input, select { font: inherit; font-size: 16px; color: var(--text); background: var(--field); border: 1px solid transparent;
+    border-radius: 10px; padding: 8px 10px; width: 100%; min-width: 0; }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  input.bad { border-color: var(--danger); }
+  .name { font-weight: 600; font-size: 17px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { padding: 6px 11px; border-radius: 999px; border: 1px solid var(--line); background: none; color: inherit;
+    font: inherit; font-size: 14px; cursor: pointer; }
+  .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .link { border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; padding: 6px 0; }
+  .link.red { color: var(--danger); }
+  .add { width: 100%; padding: 12px; border-radius: 14px; border: 1.5px dashed var(--line); background: none;
+    color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
+  .day { display: grid; grid-template-columns: 44px 1fr 1fr 1fr; gap: 6px; align-items: center; }
+  .day + .day { margin-top: 6px; }
+  .day b { font-weight: 600; }
+  .day input[type=time] { padding: 6px 6px; }
+  .day .closed { grid-column: 2 / 4; color: var(--hint); font-size: 14px; padding-left: 4px; }
+  .sw { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--hint); cursor: pointer; }
+  .sw input { width: auto; }
+  .hint { color: var(--hint); font-size: 13px; margin: 4px 4px 12px; }
+  .err { color: var(--danger); font-size: 14px; margin: 8px 4px; min-height: 1em; }
+  .save { position: fixed; left: 16px; right: 16px; bottom: 16px; max-width: 528px; margin: 0 auto; padding: 15px; border: 0;
+    border-radius: 14px; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; display: none; }
+  .save[disabled] { opacity: .45; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>⚙️ Настройки салона</h1>
+  <div class="tabs" id="tabs"></div>
+  <div id="view"></div>
+  <div class="err" id="err"></div>
+</div>
+<button class="save" id="saveBtn">Сохранить</button>
+
+<script>
+const tg = window.Telegram && Telegram.WebApp;
+const inTg = !!(tg && tg.platform && tg.platform !== "unknown");
+if (inTg) { document.documentElement.dataset.tg = ""; if (tg.colorScheme === "dark") document.documentElement.dataset.dark = ""; tg.ready(); tg.expand(); }
+
+const WEEK = ["mon","tue","wed","thu","fri","sat","sun"];
+const WEEK_RU = { mon: "Пн", tue: "Вт", wed: "Ср", thu: "Чт", fri: "Пт", sat: "Сб", sun: "Вс" };
+const TABS = [["services", "Услуги"], ["masters", "Мастера"], ["hours", "Часы работы"], ["off", "Выходные"], ["salon", "Салон"]];
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const newId = p => p + Date.now().toString(36) + Math.floor(Math.random() * 36).toString(36);
+let S, original, tab = "services";
+
+// ----- сжатие (как zlib в Python) -----
+const b64u = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const unb64u = s => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), c => c.charCodeAt(0));
+async function inflate(s) { const st = new Blob([unb64u(s)]).stream().pipeThrough(new DecompressionStream("deflate")); return new TextDecoder().decode(await new Response(st).arrayBuffer()); }
+async function deflate(text) { const st = new Blob([new TextEncoder().encode(text)]).stream().pipeThrough(new CompressionStream("deflate")); return b64u(new Uint8Array(await new Response(st).arrayBuffer())); }
+
+function changed() { return JSON.stringify(S) !== original; }
+// В Telegram обычный confirm() может не показаться — используем его окно
+function ask(text, yes) { if (inTg && tg.showConfirm) tg.showConfirm(text, ok => { if (ok) { yes(); render(); } }); else if (confirm(text)) { yes(); render(); } }
+function haptic() { inTg && tg.HapticFeedback.selectionChanged(); }
+
+// ----- поля -----
+function field(label, value, onInput, type = "text", attrs = "") {
+  const id = newId("f");
+  setTimeout(() => { const el = $(id); if (el) el.oninput = () => { onInput(type === "number" ? (el.value === "" ? "" : +el.value) : el.value); update(); }; });
+  return `<label class="f">${label}<input id="${id}" type="${type}" value="${esc(value)}" ${attrs}></label>`;
+}
+function chip(text, on, onClick) {
+  const id = newId("c");
+  setTimeout(() => { const el = $(id); if (el) el.onclick = () => { haptic(); onClick(); render(); }; });
+  return `<button class="chip${on ? " on" : ""}" id="${id}">${esc(text)}</button>`;
+}
+function btn(text, cls, onClick) {
+  const id = newId("b");
+  setTimeout(() => { const el = $(id); if (el) el.onclick = () => { haptic(); onClick(); render(); }; });
+  return `<button class="${cls}" id="${id}">${text}</button>`;
+}
+function weekEditor(wh, onChange) {
+  return WEEK.map(d => {
+    const v = wh[d];
+    const box = newId("w"), a = newId("a"), b = newId("t");
+    setTimeout(() => {
+      $(box).onchange = () => { wh[d] = $(box).checked ? ["10:00", "20:00"] : null; onChange(); render(); };
+      if (v) { $(a).oninput = () => { wh[d][0] = $(a).value; update(); }; $(b).oninput = () => { wh[d][1] = $(b).value; update(); }; }
+    });
+    return `<div class="day"><b>${WEEK_RU[d]}</b>` + (v
+      ? `<input type="time" id="${a}" value="${v[0]}"><input type="time" id="${b}" value="${v[1]}">`
+      : `<span class="closed">выходной</span>`) +
+      `<label class="sw"><input type="checkbox" id="${box}" ${v ? "checked" : ""}>работает</label></div>`;
+  }).join("");
+}
+
+// ----- вкладки -----
+const views = {
+  services() {
+    return `<p class="hint">Цены и длительность. «Скрыть» — услуга пропадёт из записи, но старые записи останутся.</p>` +
+      S.services.map((s, i) => `<div class="card${s.hidden ? " off" : ""}">
+        <div class="row">${field("Название", s.name, v => s.name = v)}</div>
+        <div class="row">${field("Цена, ₽", s.price, v => s.price = v, "number", 'inputmode="numeric" min="0"')}
+          ${field("Минут", s.minutes, v => s.minutes = v, "number", 'inputmode="numeric" min="5" step="5"')}</div>
+        <div class="row">${btn(s.hidden ? "👁 Показать" : "🙈 Скрыть", "link", () => s.hidden = !s.hidden)}
+          <span style="flex:1"></span>${btn("Удалить", "link red", () => ask(`Удалить услугу «${s.name}»?`, () => { S.services.splice(i, 1);
+            S.masters.forEach(m => m.services = m.services.filter(x => x !== s.id)); }))}</div>
+      </div>`).join("") +
+      btn("+ Добавить услугу", "add", () => S.services.push({ id: newId("s"), name: "Новая услуга", price: 1000, minutes: 60 }));
+  },
+  masters() {
+    return `<p class="hint">Кто какие услуги делает и свой график. Без своего графика мастер работает по часам салона.</p>` +
+      S.masters.map((m, i) => `<div class="card${m.hidden ? " off" : ""}">
+        <div class="row">${field("Имя", m.name, v => m.name = v)}</div>
+        <div class="row"><div class="chips">${S.services.filter(s => !s.hidden).map(s => chip(s.name, m.services.includes(s.id), () => {
+          m.services = m.services.includes(s.id) ? m.services.filter(x => x !== s.id) : [...m.services, s.id]; })).join("")}</div></div>
+        <div class="row">${btn(m.work_hours ? "Работает по часам салона" : "🕘 Свой график", "link", () => {
+          m.work_hours = m.work_hours ? undefined : JSON.parse(JSON.stringify(S.work_hours)); if (!m.work_hours) delete m.work_hours; })}</div>
+        ${m.work_hours ? `<div class="row" style="display:block">${weekEditor(m.work_hours, update)}</div>` : ""}
+        <div class="row">${btn(m.hidden ? "👁 Вернуть в запись" : "🙈 Убрать из записи", "link", () => m.hidden = !m.hidden)}
+          <span style="flex:1"></span>${btn("Удалить", "link red", () => ask(`Удалить мастера ${m.name}?`, () => {
+            S.masters.splice(i, 1); S.days_off = S.days_off.filter(d => d.master !== m.id); }))}</div>
+      </div>`).join("") +
+      btn("+ Добавить мастера", "add", () => S.masters.push({ id: newId("m"), name: "Новый мастер", services: [] }));
+  },
+  hours() {
+    return `<p class="hint">Часы работы салона по дням недели. Отпуска и праздники — во вкладке «Выходные».</p>
+      <div class="card">${weekEditor(S.work_hours, update)}</div>`;
+  },
+  off() {
+    const today = new Date().toISOString().slice(0, 10);
+    return `<p class="hint">Отпуска, больничные, праздники. В эти дни запись закрыта. Если на них уже есть клиенты, бот предупредит.</p>` +
+      S.days_off.map((d, i) => {
+        const sel = newId("sel");
+        setTimeout(() => { $(sel).onchange = () => { d.master = $(sel).value || null; update(); }; });
+        return `<div class="card">
+          <div class="row">${field("С", d.from, v => d.from = v, "date")}${field("По", d.to, v => d.to = v, "date")}</div>
+          <div class="row"><label class="f">Кто<select id="${sel}"><option value="">Весь салон</option>${S.masters.map(m =>
+            `<option value="${m.id}" ${d.master === m.id ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select></label>
+            ${field("Причина", d.note || "", v => d.note = v, "text", 'placeholder="отпуск, праздник…"')}</div>
+          <div class="row">${btn("Удалить", "link red", () => S.days_off.splice(i, 1))}</div></div>`;
+      }).join("") +
+      btn("+ Добавить выходной", "add", () => S.days_off.push({ from: today, to: today, master: null, note: "" }));
+  },
+  salon() {
+    return `<div class="card"><div class="row">${field("Название", S.business_name, v => S.business_name = v)}</div>
+      <div class="row">${field("Адрес", S.address, v => S.address = v)}</div>
+      <div class="row">${field("Телефон", S.phone, v => S.phone = v, "tel")}</div></div>`;
+  },
+};
+
+function render() {
+  $("tabs").innerHTML = "";
+  TABS.forEach(([k, t]) => { const b = document.createElement("button"); b.className = "tab" + (k === tab ? " on" : ""); b.textContent = t;
+    b.onclick = () => { haptic(); tab = k; render(); }; $("tabs").append(b); });
+  $("view").innerHTML = views[tab]();
+  update();
+}
+
+// ----- проверка как у бота, чтобы ошибки было видно до сохранения -----
+function problems() {
+  for (const s of S.services) {
+    if (!String(s.name).trim()) return "У каждой услуги должно быть название";
+    if (!(s.price >= 0)) return `«${s.name}»: укажите цену`;
+    if (!(s.minutes >= 5) || s.minutes % 5) return `«${s.name}»: длительность кратна 5 минутам`;
+  }
+  if (!S.services.some(s => !s.hidden)) return "Нужна хотя бы одна видимая услуга";
+  for (const m of S.masters) if (!String(m.name).trim()) return "У каждого мастера должно быть имя";
+  const checkWeek = (wh, who) => { for (const d of WEEK) { const v = wh[d]; if (v && !(v[0] && v[1] && v[0] < v[1])) return `${who}, ${WEEK_RU[d]}: начало раньше конца`; } };
+  let e = checkWeek(S.work_hours, "Часы салона"); if (e) return e;
+  for (const m of S.masters) if (m.work_hours && (e = checkWeek(m.work_hours, m.name))) return e;
+  for (const d of S.days_off) if (!d.from || !d.to || d.to < d.from) return "Выходные: дата «по» раньше «с»";
+  return "";
+}
+
+function update() {
+  const err = problems(), dirty = changed();
+  $("err").textContent = err;
+  const text = dirty ? "Сохранить" : "Изменений нет";
+  if (inTg) {
+    tg.MainButton.setParams({ text, color: getComputedStyle(document.documentElement).getPropertyValue("--accent").trim(),
+      text_color: "#ffffff", is_active: dirty && !err, is_visible: true });
+  } else { const b = $("saveBtn"); b.style.display = "block"; b.textContent = text; b.disabled = !dirty || !!err; }
+}
+
+async function save() {
+  if (problems() || !changed()) return;
+  const payload = JSON.stringify({ k: "settings", z: await deflate(JSON.stringify(S)) });
+  if (payload.length > 4096) { $("err").textContent = "Слишком много данных за раз. Сохраните частями."; return; }
+  if (inTg) { tg.HapticFeedback.notificationOccurred("success"); tg.sendData(payload); }
+  else { window.__sent = payload; alert("Демо в браузере: настройки ушли бы боту (" + payload.length + " байт)"); }
+}
+
+async function start() {
+  const a = new URLSearchParams(location.search).get("a");
+  if (!a) { $("view").innerHTML = '<div class="card">Откройте настройки кнопкой «⚙️ Настройки салона» в боте.</div>'; return; }
+  S = JSON.parse(await inflate(a));
+  S.masters = S.masters || []; S.days_off = S.days_off || [];
+  S.masters.forEach(m => m.services = m.services || []);
+  original = JSON.stringify(S);
+  if (inTg) tg.MainButton.onClick(save);
+  $("saveBtn").onclick = save;
+  render();
+}
+start().catch(e => { $("view").innerHTML = '<div class="card">Не удалось открыть настройки. Закройте и откройте снова.</div>'; console.error(e); });
+</script>
+</body>
+</html>
