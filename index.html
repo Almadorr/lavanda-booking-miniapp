@@ -194,7 +194,10 @@ function parseBusy() {
   });
 }
 
-const mastersFor = svc => (S.masters || []).filter(m => (m.services || []).includes(svc.id));
+const mastersFor = svc => (S.masters || []).filter(m => !m.hidden && (m.services || []).includes(svc.id));
+// Выходные даты: у всего салона (master = null) или у мастера
+const isOff = (day, masterId) => { const d = iso(day).slice(0, 10);
+  return (S.days_off || []).some(o => o.from <= d && d <= o.to && (!o.master || o.master === masterId)); };
 const masterById = id => (S.masters || []).find(m => m.id === id);
 
 // Свободное время: у конкретного мастера, у любого подходящего, или общее (если мастеров нет)
@@ -209,6 +212,7 @@ function freeSlots(day, minutes, masterId) {
 
 // Та же логика, что в logic.py у бота
 function freeSlotsFor(day, minutes, masterId, workHours) {
+  if (isOff(day, masterId)) return [];
   const hours = workHours[WD[wd(day)]];
   if (!hours) return [];
   const [oh, om] = hours[0].split(":").map(Number), [ch, cm] = hours[1].split(":").map(Number);
@@ -227,7 +231,7 @@ function freeSlotsFor(day, minutes, masterId, workHours) {
 
 function renderServices() {
   $("services").innerHTML = "";
-  S.services.forEach((s, i) => {
+  S.services.filter(s => !s.hidden).forEach((s, i) => {
     const b = document.createElement("button");
     b.className = "svc";
     b.innerHTML = `<span class="ico">${s.icon || ICONS[i % ICONS.length]}</span>
@@ -381,8 +385,18 @@ function setupTgPhone() {
   });
 }
 
+// Настройки салона приходят от бота в адресе (?c=…, сжатые), чтобы правки владельца были видны сразу.
+// Без них (старая кнопка, просмотр в браузере) — берём salon.json.
+const unb64u = s => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), c => c.charCodeAt(0));
+async function inflate(s) {
+  const st = new Blob([unb64u(s)]).stream().pipeThrough(new DecompressionStream("deflate"));
+  return new TextDecoder().decode(await new Response(st).arrayBuffer());
+}
+
 async function start() {
-  S = await (await fetch("salon.json", { cache: "no-cache" })).json();
+  const c = new URLSearchParams(location.search).get("c");
+  try { S = c ? JSON.parse(await inflate(c)) : null; } catch (e) { S = null; }
+  if (!S) S = await (await fetch("salon.json", { cache: "no-cache" })).json();
   busy = parseBusy();
   $("salonName").textContent = S.business_name;
   $("salonAddr").textContent = `📍 ${S.address}`;
